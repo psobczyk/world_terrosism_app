@@ -1,0 +1,114 @@
+---
+title: "Most deadly terrorist organizations"
+author: "Piotr Sobczyk"
+date: "March 31, 2016"
+output: html_document
+---
+
+```{r, echo=FALSE, message=FALSE}
+setwd("~/szychta_w_danych/terroryzm/")
+library(dplyr)
+library(DT)
+library(ggplot2)
+```
+
+We select only those attacks, that undoubtly were done by terrorist and that were deadly.
+
+```{r}
+terrorism <- read.csv("globalterrorism_selected_cols_0615.csv")
+terrorism$decade <- floor(terrorism$iyear/10)%%10
+terrorism %>% filter(doubtterr==0, nkill>0) -> confirmed.deadly.terrorism
+summary(confirmed.deadly.terrorism)
+```
+
+What are the most deadly terrorist organizations of all time, which ones organized most attacks?
+
+```{r, echo=FALSE}
+confirmed.deadly.terrorism %>% group_by(gname) %>%
+	summarise(total_kills=sum(nkill), total_attacks=n()) %>% top_n(20, total_kills) %>%
+	arrange(desc(total_kills)) %>% datatable()
+```
+
+We can observe that most of the attacks are done by unknown organizations, 
+nobody claims responsibility.
+
+For future reference, data is more complete when it comes to the type of weapon used.
+This indicates, that database is more or less complete, and on many occasions this is in fact 
+difficult to put the blaim on somebody.
+
+```{r, echo=FALSE}
+confirmed.deadly.terrorism %>% group_by(weaptype1_txt) %>%
+	summarise(total_kills=sum(nkill), total_attacks=n()) %>% top_n(20, total_kills) %>%
+	arrange(desc(total_kills)) %>% datatable()
+```
+
+It might be interesting to visualize this results by grouping it with respect to 
+either a region that given organization is present in, or by its ideology.
+
+#### Unknowns
+
+Let us focus more on those attacks for whom nobody take responsibility - 'unknown's.
+
+
+where are unknown from? What percentage of attacks is unknown as a percentage of 
+all attacks in regions?
+
+```{r, echo=FALSE}
+confirmed.deadly.terrorism %>% group_by(region_txt, decade) %>%
+	summarise(percent_unknown=mean(gname=='Unknown'),
+						count_unknown=sum(gname=='Unknown'),
+						kill_unknown=sum(nkill[gname=='Unknown']),
+						percent_kill_unknown=kill_unknown/sum(nkill)) %>% ungroup %>% 
+	arrange((count_unknown)) %>% datatable()
+```
+
+Note that lack of information does not coincide with when attack happend.
+
+```{r, echo=FALSE}
+confirmed.deadly.terrorism %>% group_by(region_txt, iyear) %>%
+	summarise(percent_unknown=mean(gname=='Unknown')) %>% ungroup -> plot.data
+ggplot(plot.data, aes(x=iyear, y=percent_unknown, color=region_txt)) + geom_point() +
+	geom_smooth(aes(group=region_txt), se = FALSE)
+```
+
+```{r, echo=FALSE}
+confirmed.deadly.terrorism %>% group_by(iyear) %>%
+	summarise(percent_unknown=mean(gname=='Unknown')) %>% ungroup -> plot.data
+ggplot(plot.data, aes(x=iyear, y=percent_unknown)) + geom_point()
+```
+
+Some hypothesis:
+
+##### Maybe when source of attack is unknown, then it terrifies people than they start to
+act together? Right now, the threat to Western Europe is well known, but it does not bring 
+it closer to solution.
+
+##### Nothing is anonymous in well developed parts of the world. 
+
+One reason could be that database is maintained by people from the "west". 
+
+Other is that there is no source of information about attacks
+```{r}
+confirmed.deadly.terrorism %>% group_by(gname=='Unknown', scite1=="") %>% summarise(n())
+```
+
+This is partially true. But maybe attack is more publicized when organization is identified?
+
+Maybe those attacks are really small and that's why nobody investigates them close enough?
+
+```{r}
+confirmed.deadly.terrorism %>% group_by(nkill>10, gname=='Unknown') %>% summarise(n())
+```
+
+Nope, that's not it.
+
+It seems that the only exlanatory variable here is region. Let us verify it by building 
+a logisitc model.
+
+```{r}
+fit <- glm((gname=='Unknown')~region_txt+suicide+attacktype1_txt, 
+		family = "binomial", data = confirmed.deadly.terrorism)
+summary(fit)$coefficients %>% data.frame() %>% datatable()
+```
+
+We need to be carefull with interpretation.
